@@ -5,43 +5,48 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cost Control Demo</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       background: #f2f5f8;
       color: #172638;
       font: 16px system-ui, sans-serif;
     }
-    main { max-width: 760px; margin: auto; padding: 20px; }
+    main { max-width: 800px; margin: auto; padding: 20px; }
     section {
       background: white;
       padding: 20px;
-      margin-bottom: 16px;
+      margin: 16px 0;
       border: 1px solid #dbe3ea;
       border-radius: 12px;
     }
     h2 { margin-top: 0; }
     .fields {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr));
       gap: 16px;
     }
-    label { display: grid; gap: 6px; }
+    label, .results div { display: grid; gap: 6px; }
     input {
-      box-sizing: border-box;
       width: 100%;
+      min-width: 0;
       padding: 10px;
       border: 1px solid #8696a7;
       border-radius: 6px;
+      color: inherit;
       font: inherit;
     }
-    output { font-weight: 700; }
+    .results { display: grid; gap: 12px; margin-bottom: 0; }
+    dd { margin: 0; font-weight: 700; }
+    .hint { color: #485a6e; font-size: 0.9rem; }
     #status { color: #9b3024; }
+    #status:empty { display: none; }
   </style>
 </head>
 <body>
   <main>
     <h1>Cost Control Demo</h1>
-    <p>MEP Division · Demo figures in AED</p>
+    <p>MEP Division · Single-contract demo · All amounts in AED</p>
 
     <section>
       <h2>1. Cost Sheet</h2>
@@ -70,7 +75,7 @@
           <input id="expectedVo" type="number" step="0.01"
                  value="7000" required>
         </label>
-        <label>Expected Price Inflation · AED
+        <label>Expected Price Inflation
           <input id="expectedInflation" type="number" min="0" step="0.01"
                  value="5000" required>
         </label>
@@ -78,70 +83,130 @@
           <input id="other" type="number" step="0.01" value="1000" required>
         </label>
       </div>
-      <p>Revised contract value <output id="revised"></output></p>
-      <p>Forecast contract value <output id="forecast"></output></p>
-      <p>Remaining to certify <output id="remaining"></output></p>
+      <p class="hint">Enter only inflation not already included in Expected VO or the revised contract value.</p>
+      <dl class="results">
+        <div>
+          <dt>Revised contract value</dt>
+          <dd><output id="revised"></output></dd>
+        </div>
+        <div>
+          <dt>Forecast contract value</dt>
+          <dd><output id="forecast"></output></dd>
+        </div>
+        <div>
+          <dt>Remaining to certify on this contract</dt>
+          <dd><output id="remaining"></output></dd>
+        </div>
+      </dl>
     </section>
 
     <section>
       <h2>3. Salaries &amp; Allocation</h2>
-      <label>Salaries allocated to this division to date
-        <input id="salary" type="number" min="0" step="0.01"
-               value="3000" required>
-      </label>
+      <div class="fields">
+        <label>Salaries allocated to this division to date
+          <input id="salary" type="number" min="0" step="0.01"
+                 value="3000" required>
+        </label>
+        <label>Expected remaining salaries
+          <input id="remainingSalary" type="number" min="0" step="0.01"
+                 value="6000" required>
+        </label>
+      </div>
     </section>
 
     <section>
       <h2>4. Cost Report</h2>
-      <p>Division actual cost <output id="actual"></output></p>
+      <div class="fields">
+        <label>Original division budget
+          <input id="budget" type="number" min="0" step="0.01"
+                 value="160000" required>
+        </label>
+        <label>Initial division forecast
+          <input id="initialForecast" type="number" min="0" step="0.01"
+                 value="160000" required>
+        </label>
+        <label>Remaining unawarded work
+          <input id="unawarded" type="number" min="0" step="0.01"
+                 value="25000" required>
+        </label>
+      </div>
+      <p class="hint">A positive budget variance means the forecast exceeds the budget.</p>
+      <dl class="results">
+        <div>
+          <dt>Division actual cost</dt>
+          <dd><output id="actual"></output></dd>
+        </div>
+        <div>
+          <dt>Division forecast at completion (EAC)</dt>
+          <dd><output id="eac"></output></dd>
+        </div>
+        <div>
+          <dt>Variance vs original budget</dt>
+          <dd><output id="budgetVariance"></output></dd>
+        </div>
+        <div>
+          <dt>Change vs initial forecast</dt>
+          <dd><output id="forecastChange"></output></dd>
+        </div>
+      </dl>
       <p id="status" role="status"></p>
     </section>
   </main>
 
   <script>
     const byId = (id) => document.getElementById(id);
-    const fields = [
-      "contract", "certified", "vo1", "vo2",
-      "expectedVo", "expectedInflation", "other", "salary"
-    ];
-    const results = ["revised", "forecast", "remaining", "actual"];
+    const inputs = Array.from(document.querySelectorAll("input"));
+    const outputs = document.querySelectorAll("output");
     const currency = new Intl.NumberFormat("en-AE", {
       style: "currency",
       currency: "AED"
     });
 
-    // Calculate in fils and display the results in dirhams.
+    // Read amounts in fils and display results in dirhams.
     const fils = (id) => Math.round(byId(id).valueAsNumber * 100);
-    const show = (id, amount) => {
+
+    function show(id, amount) {
       byId(id).textContent = currency.format(amount / 100);
-    };
+    }
 
     function update() {
       const status = byId("status");
 
-      if (fields.some((id) => !byId(id).validity.valid)) {
-        results.forEach((id) => { byId(id).textContent = "—"; });
+      if (inputs.some((input) => !input.validity.valid)) {
+        outputs.forEach((output) => { output.textContent = "—"; });
         status.textContent = "Enter valid amounts. Use 0 for unused fields.";
         return;
       }
 
       const certified = fils("certified");
       const revised = fils("contract") + fils("vo1") + fils("vo2");
-      const forecast = revised + fils("expectedVo") + fils("expectedInflation");
+      const forecastContract =
+        revised + fils("expectedVo") + fils("expectedInflation");
       const remaining = revised - certified;
       const actual = certified + fils("other") + fils("salary");
 
+      // The full contract forecast already includes the certified amount.
+      const divisionForecast = forecastContract + fils("other")
+        + fils("salary") + fils("unawarded") + fils("remainingSalary");
+
       show("revised", revised);
-      show("forecast", forecast);
+      show("forecast", forecastContract);
       show("remaining", remaining);
       show("actual", actual);
+      show("eac", divisionForecast);
+      show("budgetVariance", divisionForecast - fils("budget"));
+      show("forecastChange", divisionForecast - fils("initialForecast"));
 
-      status.textContent = remaining < 0
-        ? "Review required: certified amount exceeds the revised contract value."
-        : "";
+      if (remaining < 0) {
+        status.textContent = "Review required: certified amount exceeds the revised contract value.";
+      } else if (forecastContract < certified) {
+        status.textContent = "Review required: forecast contract value is below the certified amount.";
+      } else {
+        status.textContent = "";
+      }
     }
 
-    fields.forEach((id) => byId(id).addEventListener("input", update));
+    inputs.forEach((input) => input.addEventListener("input", update));
     update();
   </script>
 </body>
